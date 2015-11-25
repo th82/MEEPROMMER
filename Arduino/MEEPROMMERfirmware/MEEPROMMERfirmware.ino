@@ -68,6 +68,8 @@ unsigned int lineLength,dataLength;
 #define WRITE_BIN   21
 #define WRITE_ITL   22
 
+#define TEST		23
+
 
 /*****************************************************************
  *
@@ -331,6 +333,10 @@ byte parseCommand() {
   case 'V':
     retval = VERSION; 
     break;
+  case 'T':
+	//Usage is T,XXXX,LLLL,BB - where XXXX is the start_address (HEX), LLLL is the number of bytes to write (HEX) and BB is the byte value (HEX)
+	retval = TEST;
+	break;
   default:
     retval = NOCOMMAND;
     break;
@@ -471,8 +477,21 @@ void printByte(byte data) {
 }
 
 
-
-
+/**
+ * Test function - writes user defined byte to user defined locations in EEPROM
+ */
+void perform_test(unsigned int start_address, unsigned int datalength, byte data){
+	for (unsigned int address = start_address; address < start_address + datalength; address++){
+		fast_write(address, data);
+		Serial.print(data, HEX);
+		Serial.print(" written to Ox");
+		Serial.print(address, HEX);
+		Serial.println();
+	}
+	Serial.print("Test completed - ");
+	Serial.print(datalength);
+	Serial.print(" bytes written to EEPROM.");
+}
 
 /************************************************
  *
@@ -547,6 +566,11 @@ void loop() {
   case VERSION:
     Serial.println(VERSIONSTRING);
     break;
+  case TEST:
+	//this is abusing the READ_HEX functionality - lineLength is actually the byte written to the memory locations defined by startAddress and dataLength
+	Serial.print('Starting test...');
+	perform_test(startAddress, dataLength, lineLength);
+	break;
   default:
     break;    
   }
