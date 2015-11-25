@@ -196,6 +196,7 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
 
                     byte c = ' ';
                     do {
+                    	Thread.sleep(20); //sleep 20 ms - see http://playground.arduino.cc/Interfacing/Java
                         c = (byte) mySerial.in.read();
                     } while (c != '%');
 
