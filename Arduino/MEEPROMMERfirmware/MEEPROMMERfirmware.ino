@@ -14,6 +14,8 @@
  *
  **/
 
+#include "Arduino.h"
+
 #define VERSIONSTRING "MEEPROMMER $Revision: 1.2 $ $Date: 2013/05/05 11:01:54 $, CMD:R,r,w,W,V"
 
 // shiftOut part
@@ -128,6 +130,29 @@ void write_data_bus(byte data)
   PORTD = PIND | ( data << 2 );
 }
 
+//faster shiftOut function then normal IDE function (about 4 times)
+void fastShiftOut(byte data) {
+  //clear data pin
+  bitClear(PORTC,PORTC_DS);
+  //Send each bit of the myDataOut byte MSBFIRST
+  for (int i=7; i>=0; i--)  {
+    bitClear(PORTC,PORTC_CLOCK);
+    //--- Turn data on or off based on value of bit
+    if ( bitRead(data,i) == 1) {
+      bitSet(PORTC,PORTC_DS);
+    }
+    else {
+      bitClear(PORTC,PORTC_DS);
+    }
+    //register shifts bits on upstroke of clock pin
+    bitSet(PORTC,PORTC_CLOCK);
+    //zero the data pin after shift to prevent bleed through
+    bitClear(PORTC,PORTC_DS);
+  }
+  //stop shifting
+  bitClear(PORTC,PORTC_CLOCK);
+}
+
 //shift out the given address to the 74hc595 registers
 void set_address_bus(unsigned int address)
 {
@@ -150,28 +175,7 @@ void set_address_bus(unsigned int address)
 
 }
 
-//faster shiftOut function then normal IDE function (about 4 times)
-void fastShiftOut(byte data) {
-  //clear data pin
-  bitClear(PORTC,PORTC_DS);
-  //Send each bit of the myDataOut byte MSBFIRST
-  for (int i=7; i>=0; i--)  {
-    bitClear(PORTC,PORTC_CLOCK);
-    //--- Turn data on or off based on value of bit
-    if ( bitRead(data,i) == 1) {
-      bitSet(PORTC,PORTC_DS);
-    }
-    else {      
-      bitClear(PORTC,PORTC_DS);
-    }
-    //register shifts bits on upstroke of clock pin  
-    bitSet(PORTC,PORTC_CLOCK);
-    //zero the data pin after shift to prevent bleed through
-    bitClear(PORTC,PORTC_DS);
-  }
-  //stop shifting
-  bitClear(PORTC,PORTC_CLOCK);
-}
+
 
 //short function to set the OE(output enable line of the eeprom)
 // attention, this line is LOW - active
@@ -242,6 +246,9 @@ void fast_write(unsigned int address, byte data)
   //set data bus
   write_data_bus(data);
 
+  //wait sometime to set address and data
+  delay(5);
+
   //enable chip select
   set_ce(LOW);
 
@@ -256,21 +263,80 @@ void fast_write(unsigned int address, byte data)
 
   //disable write
   set_we(HIGH);
-
-  data_bus_input();
-
+  set_ce(HIGH);
   set_oe(LOW);
 
-  while(data != read_data_bus()) {
-    cyclecount++;
-  };
+  //wait after write cycle
+  delay(5);
 
-  set_oe(HIGH);
-  set_ce(HIGH);
+  //read data
+  data_bus_input();
+//
+//  set_ce(LOW);
+//  delayMicroseconds(20);
+//  set_oe(LOW);
+//
+//  while(data != read_data_bus()) {
+//  //while(false) {
+//    cyclecount++;
+//    Serial.print("byte to write: ");
+//    Serial.print(data, HEX);
+//    Serial.print(" ,byte read: ");
+//    Serial.print(read_data_bus(), HEX);
+//    Serial.println();
+//  };
+//
+//  set_oe(HIGH);
+//  delayMicroseconds(20);
+//  set_ce(HIGH);
+
+  
 
 }
 
 
+/************************************************************
+ * convert a single hex digit (0-9,a-f) to byte
+ * @param char c single character (digit)
+ * @return byte represented by the digit
+ ************************************************************/
+byte hexDigit(char c)
+{
+  if (c >= '0' && c <= '9') {
+    return c - '0';
+  }
+  else if (c >= 'a' && c <= 'f') {
+    return c - 'a' + 10;
+  }
+  else if (c >= 'A' && c <= 'F') {
+    return c - 'A' + 10;
+  }
+  else {
+    return 0;   // getting here is bad: it means the character was invalid
+  }
+}
+
+/************************************************************
+ * convert a hex byte (00 - ff) to byte
+ * @param c-string with the hex value of the byte
+ * @return byte represented by the digits
+ ************************************************************/
+byte hexByte(char* a)
+{
+  return ((hexDigit(a[0])*16) + hexDigit(a[1]));
+}
+
+/************************************************************
+ * convert a hex word (0000 - ffff) to unsigned int
+ * @param c-string with the hex value of the word
+ * @return unsigned int represented by the digits
+ ************************************************************/
+unsigned int hexWord(char* data) {
+  return ((hexDigit(data[0])*4096)+
+    (hexDigit(data[1])*256)+
+    (hexDigit(data[2])*16)+
+    (hexDigit(data[3])));
+}
 
 /************************************************
  *
@@ -345,48 +411,6 @@ byte parseCommand() {
   return retval;
 }
 
-/************************************************************
- * convert a single hex digit (0-9,a-f) to byte
- * @param char c single character (digit)
- * @return byte represented by the digit 
- ************************************************************/
-byte hexDigit(char c)
-{
-  if (c >= '0' && c <= '9') {
-    return c - '0';
-  } 
-  else if (c >= 'a' && c <= 'f') {
-    return c - 'a' + 10;
-  } 
-  else if (c >= 'A' && c <= 'F') {
-    return c - 'A' + 10;
-  } 
-  else {
-    return 0;   // getting here is bad: it means the character was invalid
-  }
-}
-
-/************************************************************
- * convert a hex byte (00 - ff) to byte
- * @param c-string with the hex value of the byte
- * @return byte represented by the digits 
- ************************************************************/
-byte hexByte(char* a)
-{
-  return ((hexDigit(a[0])*16) + hexDigit(a[1]));
-}
-
-/************************************************************
- * convert a hex word (0000 - ffff) to unsigned int
- * @param c-string with the hex value of the word
- * @return unsigned int represented by the digits 
- ************************************************************/
-unsigned int hexWord(char* data) {
-  return ((hexDigit(data[0])*4096)+
-    (hexDigit(data[1])*256)+
-    (hexDigit(data[2])*16)+
-    (hexDigit(data[3]))); 
-}
 
 
 /************************************************
@@ -395,6 +419,24 @@ unsigned int hexWord(char* data) {
  *
  *************************************************/
 
+/**
+ * print out a 16 bit word as 4 character hex value
+ **/
+void printAddress(unsigned int address) {
+  if(address < 0x0010) Serial.print("0");
+  if(address < 0x0100) Serial.print("0");
+  if(address < 0x1000) Serial.print("0");
+  Serial.print(address, HEX);
+
+}
+
+/**
+ * print out a byte as 2 character hex value
+ **/
+void printByte(byte data) {
+  if(data < 0x10) Serial.print("0");
+  Serial.print(data, HEX);
+}
 
 /**
  * read a data block from eeprom and write out a hex dump 
@@ -458,26 +500,6 @@ void write_block(unsigned int address, byte* buffer, int len) {
 
 
 /**
- * print out a 16 bit word as 4 character hex value
- **/
-void printAddress(unsigned int address) {
-  if(address < 0x0010) Serial.print("0");
-  if(address < 0x0100) Serial.print("0");
-  if(address < 0x1000) Serial.print("0");
-  Serial.print(address, HEX);
-
-}
-
-/**
- * print out a byte as 2 character hex value
- **/
-void printByte(byte data) {
-  if(data < 0x10) Serial.print("0");
-  Serial.print(data, HEX);  
-}
-
-
-/**
  * Test function - writes user defined byte to user defined locations in EEPROM
  */
 void perform_test(unsigned int start_address, unsigned int datalength, byte data){
@@ -515,7 +537,7 @@ void setup() {
 
   //set speed of serial connection
   //Serial.begin(57600);
-  Serial.begin(115200);
+  Serial.begin(9600);
 }
 
 /**
@@ -568,7 +590,7 @@ void loop() {
     break;
   case TEST:
 	//this is abusing the READ_HEX functionality - lineLength is actually the byte written to the memory locations defined by startAddress and dataLength
-	Serial.print('Starting test...');
+	Serial.print("Starting test...");
 	perform_test(startAddress, dataLength, lineLength);
 	break;
   default:
